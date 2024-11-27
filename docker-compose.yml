@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/backend
+      - /backend/node_modules
+    env_file:
+      - .env 
+    command: npx nodemon --watch src --ext ts,json --exec npx ts-node src/index.ts
+
+  frontend:
+    build: ./frontend
+    ports:
+      - '80:80'
+    stdin_open: true
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - REACT_APP_GOOGLE_API_KEY=${GOOGLE_API_KEY} 
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    env_file:
+      - .env 
