@@ -1,25 +1,52 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Button, FormControl, Row, Col, Container, FormLabel, Offcanvas } from "react-bootstrap";
-import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
-import axios from "axios";
+import { GoogleMap, useJsApiLoader, Libraries } from '@react-google-maps/api';
+import axios, { AxiosResponse } from "axios";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import RatingStars from "../components/RatingStars";
+
+interface IDriver {
+  id: string;
+  name: string;
+  description: string;
+  vehicle: string;
+  review: {
+    rating: number;
+    comment: string;
+  };
+  value: number;
+}
+
+interface ITripRequestPageState {
+  customerId: string;
+  distance: string | null;
+  duration: string | null;
+  drivers: IDriver[];
+  show: boolean;
+  center: {
+    lat: number;
+    lng: number;
+  };
+}
+
+const libraries: Libraries = ['places'];
 
 const TripRequestPage: React.FC = () => {
-  const [customerId, setCustomerId] = useState('');
-  const [distance, setDistance] = useState('');
-  const [duration, setDuration] = useState('');
-  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
-  const [drivers, setDrivers] = useState<any[]>([]);
-  const [show, setShow] = useState(false);
+  const [state, setState] = useState<ITripRequestPageState>({
+    customerId: '',
+    distance: null,
+    duration: null,
+    drivers: [],
+    show: false,
+    center: { lat: -23.523078203911453, lng: -46.67423087273223 },
+  });
+
+  const [directionsRenderer, setDirectionsRenderer] = useState<any>()
 
   const originRef = useRef<HTMLInputElement>(null);
   const destinationRef = useRef<HTMLInputElement>(null);
-
-  const center = {
-    lat: -23.523078203911453,
-    lng: -46.67423087273223,
-  };
+  const mapRef = useRef<google.maps.Map | null>(null);
 
   const containerStyle = {
     width: '100%',
@@ -29,48 +56,134 @@ const TripRequestPage: React.FC = () => {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_API_KEY!,
-    libraries: ['places'],
+    libraries
   });
 
   const handleMapLoad = (map: google.maps.Map) => {
-    setMapInstance(map);
-    console.log('Mapa carregado:', map);
+    mapRef.current = map;
   };
 
   useEffect(() => {
-    if (mapInstance && originRef.current && destinationRef.current) {
+    if (isLoaded && originRef.current && destinationRef.current) {
       new google.maps.places.Autocomplete(originRef.current, {
         fields: ['place_id', 'geometry', 'name', 'formatted_address'],
-        bounds: new google.maps.LatLngBounds(new google.maps.LatLng(center.lat, center.lng)),
-      } as google.maps.places.AutocompleteOptions);
+        bounds: new google.maps.LatLngBounds(new google.maps.LatLng(state.center.lat, state.center.lng)),
+      });
 
       new google.maps.places.Autocomplete(destinationRef.current, {
         fields: ['place_id', 'geometry', 'name', 'formatted_address'],
-        bounds: new google.maps.LatLngBounds(new google.maps.LatLng(center.lat, center.lng)),
-      } as google.maps.places.AutocompleteOptions);
+        bounds: new google.maps.LatLngBounds(new google.maps.LatLng(state.center.lat, state.center.lng)),
+      });
+
+      setDirectionsRenderer(new google.maps.DirectionsRenderer())
     }
-  }, [mapInstance]);
+  }, [isLoaded, state.center]);
 
   async function calculateRoute() {
-    if (!originRef.current || !destinationRef.current || originRef.current.value === '' || destinationRef.current.value === '' || customerId === '') {
+    if (!originRef.current || !destinationRef.current || originRef.current.value === '' || destinationRef.current.value === '' || state.customerId === '') {
       toast.error("Por favor, preencha todos os campos (incluindo o ID do usuário).");
       return;
     }
 
     try {
-      const response = await axios.post('http://localhost:8080/ride/estimate', {
-        customer_id: customerId,
+      let response: AxiosResponse = await axios.post('http://localhost:8080/ride/estimate', {
+        customer_id: state.customerId,
         origin: originRef.current.value,
         destination: destinationRef.current.value,
       });
 
-      setDistance(response.data.distance);
-      setDuration(response.data.duration);
-      setDrivers(response.data.options); 
-      setShow(true); 
+      setState(prevState => ({
+        ...prevState,
+        distance: response.data.distance,
+        duration: response.data.duration,
+        drivers: response.data.options,
+        show: true,
+      }));
 
-      console.log(response);
+      if (response.data.origin && response.data.destination) {
+        setState(prevState => ({
+          ...prevState,
+          center: {
+            lat: (response.data.origin.latitude + response.data.destination.latitude) / 2,
+            lng: (response.data.origin.longitude + response.data.destination.longitude) / 2,
+          }
+        }));
 
+        const directionsService = new google.maps.DirectionsService();
+        // const directionsRenderer = new google.maps.DirectionsRenderer();
+        directionsRenderer.setMap(mapRef.current);
+
+        const request = {
+          origin: originRef.current.value,
+          destination: destinationRef.current.value,
+          travelMode: google.maps.TravelMode.DRIVING,
+        };
+
+        directionsService.route(request, (result, status) => {
+          if (status === google.maps.DirectionsStatus.OK) {
+            directionsRenderer.setDirections(result);
+          } else {
+            toast.error("Não foi possível calcular a rota.");
+          }
+        });
+      }
+
+    } catch (error: any) {
+      if (error.response && error.response.data) {
+        const { error_code, error_description } = error.response.data;
+        toast.error(
+          <>
+            <strong>{error_code}</strong> <br /> {error_description}
+          </>
+        );
+      } else {
+        toast.error("Erro ao calcular a rota.");
+      }
+    }
+  }
+
+  async function requestTravel(driver: IDriver) {
+    if (!originRef.current || !destinationRef.current || originRef.current.value === '' || destinationRef.current.value === '' || state.customerId === '') {
+      toast.error("Não foi possível receber os dados da corrida.");
+      return;
+    }
+
+    try {
+      const travel = {
+        customer_id: state.customerId,
+        origin: originRef.current.value,
+        destination: destinationRef.current.value,
+        driver: {
+          id: driver.id,
+          name: driver.name,
+        },
+        value: driver.value,
+        distance: state.distance,
+        duration: state.duration,
+      };
+
+      const response: AxiosResponse = await axios.patch('http://localhost:8080/ride/confirm', travel);
+
+      if (response.data.success === true) {
+        toast.success(
+          <>
+            <strong>Corrida realizada com sucesso!</strong> <br /> Verifique a listagem de corridas.
+          </>
+        );
+        originRef.current.value = '';
+        destinationRef.current.value = '';
+        setState(prevState => ({
+          ...prevState,
+          customerId: '',
+          show: false,
+          drivers: [],
+          distance: null,
+          duration: null
+        }));
+
+
+        directionsRenderer.setMap(null);
+      }
     } catch (error: any) {
       if (error.response && error.response.data) {
         const { error_code, error_description } = error.response.data;
@@ -94,8 +207,8 @@ const TripRequestPage: React.FC = () => {
             <FormControl
               type="text"
               placeholder="Digite o ID do usuário"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
+              value={state.customerId}
+              onChange={(e) => setState(prevState => ({ ...prevState, customerId: e.target.value }))}
               required
             />
           </Col>
@@ -125,10 +238,10 @@ const TripRequestPage: React.FC = () => {
         </Row>
         <Row>
           <Col md={6}>
-            <p>Distância: {distance}</p>
+            <p>Distância: {state.distance ? state.distance + 'm' : null}</p>
           </Col>
           <Col md={6}>
-            <p>Duração: {duration}</p>
+            <p>Duração: {state.duration}</p>
           </Col>
         </Row>
       </div>
@@ -138,7 +251,7 @@ const TripRequestPage: React.FC = () => {
           id="map"
           zoom={18}
           mapContainerStyle={containerStyle}
-          center={center}
+          center={state.center}
           onLoad={handleMapLoad}
         >
         </GoogleMap>
@@ -146,13 +259,13 @@ const TripRequestPage: React.FC = () => {
         <p>Carregando o Mapa...</p>
       )}
 
-      <Offcanvas show={show} onHide={() => setShow(false)} placement="end">
+      <Offcanvas show={state.show} onHide={() => setState(prevState => ({ ...prevState, show: false }))} placement="end">
         <Offcanvas.Header closeButton>
           <Offcanvas.Title>Motoristas Disponíveis</Offcanvas.Title>
         </Offcanvas.Header>
         <Offcanvas.Body>
           <ul className="list-group">
-            {drivers.map((driver) => (
+            {state.drivers.map((driver) => (
               <li key={driver.id} className="list-group-item">
                 <div className="d-flex row m-0 p-0">
                   <span>
@@ -162,7 +275,10 @@ const TripRequestPage: React.FC = () => {
                     <strong>Veículo: </strong>{driver.vehicle}
                   </span>
                   <span>
-                    <strong>Avaliação: </strong>{driver.review.rating}
+                    <span>
+                      <strong>Avaliação: </strong>
+                      <RatingStars rating={driver.review.rating} />
+                    </span>
                   </span>
                   <span>
                     <strong>Valor: </strong>R$ {driver.value.toFixed(2).replace('.', ',')}
@@ -170,7 +286,7 @@ const TripRequestPage: React.FC = () => {
                   <div className="d-flex justify-content-end m-0 p-0 mb-1 mt-2">
                     <button
                       className="btn btn-secondary"
-                      onClick={() => alert(`Você escolheu o motorista ${driver.name}`)}
+                      onClick={() => requestTravel(driver)}
                     >
                       Escolher
                     </button>

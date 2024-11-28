@@ -1,0 +1,56 @@
+/* Estilo do link no menu lateral e navbar */
+.sidebar-link {
+    border-radius: 8px; /* Bordas arredondadas */
+    padding: 10px 20px; /* Padding para os itens */
+    transition: background-color 0.3s ease, box-shadow 0.3s ease; /* Transição suave */
+    color: #343a40; /* Cor do texto */
+}
+
+.sidebar-link:hover {
+    background-color: #a3a3a3; /* Cor de fundo no hover */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Sombra ao passar o mouse */
+}
+
+/* Estilo do link ativo */
+.active-link {
+    background-color: #6c757d !important; /* Cor de fundo quando o link está ativo */
+    color: white !important; /* Cor do texto quando ativo */
+}
+
+/* Estilo do link no menu lateral */
+.offcanvas-body .nav-link {
+    font-size: 18px;
+    margin: 10px 0;
+}
+
+/* Caso queira que a cor do texto do link ativo seja mais suave */
+.offcanvas-body .active-link {
+    background-color: #495057;
+    color: white;
+}
+
+/* Navbar link */
+.nav-link-top {
+    position: relative;
+    text-decoration: none;
+    padding-bottom: 5px; /* Ajusta o espaço para a linha */
+}
+
+/* Linha branca sob o link (ativa) */
+.nav-link-top:after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 2px;
+    background-color: white;
+    visibility: hidden; /* A linha estará oculta por padrão */
+    transition: visibility 0s, opacity 0.2s linear;
+}
+
+/* Mostrar a linha branca apenas quando o link estiver ativo */
+.nav-link-top.active:after {
+    visibility: visible;
+    opacity: 1;
+}
